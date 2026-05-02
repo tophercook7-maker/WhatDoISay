@@ -1,0 +1,7 @@
+.DS_Store
+.env
+mobile/.env
+.reply-check/
+mobile/.reply-check/
+node_modules/
+mobile/node_modules/

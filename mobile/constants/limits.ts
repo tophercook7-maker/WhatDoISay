@@ -1,0 +1,2 @@
+export const FREE_DAILY_TEXT_REPLIES = 5;
+export const FREE_MONTHLY_VOICE_REPLIES = 3;
