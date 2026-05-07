@@ -88,8 +88,8 @@ export default function App() {
           error={workflow.error || usage.error}
           loading={workflow.loading}
           onGenerate={async (request) => {
-            const createdReply = await workflow.generateReply(request);
-            if (createdReply) {
+            const createdRescue = await workflow.generateRescue(request);
+            if (createdRescue) {
               setRoute('result');
             }
           }}
@@ -103,10 +103,12 @@ export default function App() {
         <ResultScreen
           error={workflow.error}
           loading={workflow.loading}
-          reply={workflow.currentReply}
           onBack={() => setRoute('main')}
-          onTryAgain={async () => workflow.tryAgain()}
           onModify={workflow.modifyReply}
+          onSelectStrategy={workflow.selectStrategy}
+          onTryAgain={async () => workflow.tryAgain()}
+          rescue={workflow.currentRescue}
+          selectedStrategyId={workflow.selectedStrategyId}
         />
       ) : null}
       {route === 'settings' ? (

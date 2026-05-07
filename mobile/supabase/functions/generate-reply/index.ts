@@ -1,6 +1,6 @@
 import { getAdminClient, requireUser } from '../_shared/auth.ts';
 import { corsHeaders, errorResponse, HttpError, jsonResponse } from '../_shared/cors.ts';
-import { createReply } from '../_shared/openai.ts';
+import { createRescue } from '../_shared/openai.ts';
 import { GenerateReplyPayload } from '../_shared/types.ts';
 import {
   assertCanUseTextReply,
@@ -16,16 +16,11 @@ Deno.serve(async (req) => {
   }
 
   try {
-    console.log('[generate-reply] Function reached');
-    console.log('[generate-reply] Authorization header exists:', Boolean(req.headers.get('Authorization') ?? req.headers.get('authorization')));
-
     if (req.method !== 'POST') {
       throw new HttpError(405, 'Use POST for this request.');
     }
 
     const user = await requireUser(req);
-    console.log('[generate-reply] User verified:', Boolean(user));
-    console.log('[generate-reply] User id:', user.id);
     const admin = getAdminClient();
     const account = await loadAccount(admin, user.id);
     const usage = await assertCanUseTextReply(admin, user.id, account.plan);
@@ -45,12 +40,14 @@ Deno.serve(async (req) => {
       throw new HttpError(400, 'That is a little too long. Shorten it and try again.');
     }
 
-    const reply = await createReply(buildGenerateMessage({ mode, pastedMessage, userInput }));
+    const rescue = await createRescue(buildRescueMessage({ mode, pastedMessage, userInput }));
     const updatedUsage = await incrementTextUsage(admin, usage);
 
+    // Save the first strategy as the canonical history row. Storing all three would
+    // require a schema migration; that is a Phase 2 follow-up.
     await saveReplyHistory(admin, {
       actionType: 'generate',
-      generatedReply: reply,
+      generatedReply: rescue.strategies[0]?.text ?? '',
       inputType,
       mode,
       pastedMessage,
@@ -60,7 +57,7 @@ Deno.serve(async (req) => {
     });
 
     return jsonResponse({
-      reply,
+      rescue,
       source: 'openai',
       usage: toUsageSummary(updatedUsage, account.plan),
     });
@@ -69,12 +66,12 @@ Deno.serve(async (req) => {
   }
 });
 
-function buildGenerateMessage(params: { mode: string; pastedMessage: string; userInput: string }) {
+function buildRescueMessage(params: { mode: string; pastedMessage: string; userInput: string }) {
   return [
     `Mode: ${params.mode}`,
     params.pastedMessage ? `Message being replied to:\n${params.pastedMessage}` : '',
     params.userInput ? `User notes:\n${params.userInput}` : '',
-    'Return one final sendable message only.',
+    'Return JSON with three strategically different replies and a "don\'t say" warning.',
   ]
     .filter(Boolean)
     .join('\n\n');

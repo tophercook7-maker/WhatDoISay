@@ -54,3 +54,19 @@ export interface ModifyReplyPayload {
   pastedMessage?: string;
   previousReply?: string;
 }
+
+export interface Strategy {
+  id: 'a' | 'b' | 'c';
+  label: string;
+  text: string;
+}
+
+export interface DontSay {
+  trap: string;
+  why: string;
+}
+
+export interface Rescue {
+  strategies: Strategy[];
+  dontSay: DontSay;
+}

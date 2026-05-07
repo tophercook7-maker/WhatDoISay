@@ -1,5 +1,10 @@
 import { supabase } from '../lib/supabase';
-import { AiReplyResponse, ModificationType, ReplyRequest } from '../types';
+import {
+  AiReplyResponse,
+  AiRescueResponse,
+  ModificationType,
+  ReplyRequest,
+} from '../types';
 
 export const useMockAi = process.env.EXPO_PUBLIC_USE_MOCK_AI === 'true';
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -21,7 +26,7 @@ interface ModifyReplyBody {
   previousReply?: string;
 }
 
-export async function generateAiReply(request: ReplyRequest): Promise<AiReplyResponse> {
+export async function generateAiRescue(request: ReplyRequest): Promise<AiRescueResponse> {
   if (!supabase) {
     throw new Error('Supabase is not configured yet.');
   }
@@ -33,7 +38,7 @@ export async function generateAiReply(request: ReplyRequest): Promise<AiReplyRes
     userInput: request.userInput,
   };
 
-  return callEdgeFunction('generate-reply', body);
+  return callRescueEndpoint(body);
 }
 
 export async function modifyAiReply(params: {
@@ -53,18 +58,24 @@ export async function modifyAiReply(params: {
     previousReply: params.previousReply,
   };
 
-  return callEdgeFunction('modify-reply', body);
+  return callModifyEndpoint(body);
 }
 
 export async function runAiConnectionTest() {
   if (!supabase) {
-    return ['Signed in: no', 'Access token present: no', 'Edge Function status: not run', 'Message: Supabase is not configured yet.'].join('\n');
+    return [
+      'Signed in: no',
+      'Access token present: no',
+      'Edge Function status: not run',
+      'Message: Supabase is not configured yet.',
+    ].join('\n');
   }
 
   const {
     data: { session },
     error: sessionError,
   } = await supabase.auth.getSession();
+
   const baseLines = [
     `Signed in: ${session ? 'yes' : 'no'}`,
     `Access token present: ${session?.access_token ? 'yes' : 'no'}`,
@@ -72,24 +83,34 @@ export async function runAiConnectionTest() {
   ];
 
   if (sessionError) {
-    return [...baseLines, 'Edge Function status: not run', 'Message: Could not read your session. Please sign in again.'].join('\n');
+    return [
+      ...baseLines,
+      'Edge Function status: not run',
+      'Message: Could not read your session. Please sign in again.',
+    ].join('\n');
   }
 
   if (!session?.access_token) {
-    return [...baseLines, 'Edge Function status: not run', 'Message: You are not signed in. Please sign in again.'].join('\n');
+    return [
+      ...baseLines,
+      'Edge Function status: not run',
+      'Message: You are not signed in. Please sign in again.',
+    ].join('\n');
   }
 
   try {
-    const response = await callEdgeFunction('generate-reply', {
+    const response = await callRescueEndpoint({
       inputType: 'text',
       mode: 'auto',
       userInput: 'test message',
     });
 
+    const ok = (response.rescue?.strategies?.length ?? 0) > 0;
+
     return [
       ...baseLines,
       'Edge Function status: success',
-      `Message: ${response.reply ? 'Reply returned' : 'No reply returned'}`,
+      `Message: ${ok ? 'Rescue returned' : 'No rescue returned'}`,
     ].join('\n');
   } catch (error) {
     return [
@@ -100,14 +121,46 @@ export async function runAiConnectionTest() {
   }
 }
 
-async function callEdgeFunction(name: 'generate-reply' | 'modify-reply', body: GenerateReplyBody | ModifyReplyBody) {
+async function callRescueEndpoint(body: GenerateReplyBody): Promise<AiRescueResponse> {
   const session = await getAuthenticatedSession();
 
   if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error('Supabase is not configured yet.');
   }
 
-  const response = await fetch(`${supabaseUrl}/functions/v1/${name}`, {
+  const response = await fetch(`${supabaseUrl}/functions/v1/generate-reply`, {
+    body: JSON.stringify(body),
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      'Content-Type': 'application/json',
+      apikey: supabaseAnonKey,
+    },
+    method: 'POST',
+  }).catch(() => {
+    throw new Error('Could not reach the AI service.');
+  });
+
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(getFriendlyStatusError(response.status, payload?.error));
+  }
+
+  if (!payload?.rescue?.strategies?.length) {
+    throw new Error('The AI service returned an empty rescue.');
+  }
+
+  return payload as AiRescueResponse;
+}
+
+async function callModifyEndpoint(body: ModifyReplyBody): Promise<AiReplyResponse> {
+  const session = await getAuthenticatedSession();
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error('Supabase is not configured yet.');
+  }
+
+  const response = await fetch(`${supabaseUrl}/functions/v1/modify-reply`, {
     body: JSON.stringify(body),
     headers: {
       Authorization: `Bearer ${session.access_token}`,
@@ -169,7 +222,7 @@ function getFriendlyStatusError(status: number, serverMessage?: string) {
   }
 
   if (status === 403) {
-    return 'You’ve used your free replies for today.';
+    return 'You\u2019ve used your free replies for today.';
   }
 
   if (status === 500) {

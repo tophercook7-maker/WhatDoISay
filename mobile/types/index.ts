@@ -93,3 +93,36 @@ export interface AccountPlan {
   label: 'Free' | 'Pro';
   source: 'profile' | 'subscription' | 'free';
 }
+
+// --- Rescue types: multi-strategy replies plus "don't say" warning ---
+
+export type StrategyId = 'a' | 'b' | 'c';
+
+export interface Strategy {
+  id: StrategyId;
+  label: string;
+  text: string;
+}
+
+export interface DontSay {
+  trap: string;
+  why: string;
+}
+
+export interface Rescue {
+  strategies: Strategy[];
+  dontSay: DontSay;
+}
+
+export interface RescueResult {
+  id: string;
+  rescue: Rescue;
+  request: ReplyRequest;
+  createdAt: string;
+}
+
+export interface AiRescueResponse {
+  rescue: Rescue;
+  source: 'openai' | 'mock';
+  usage?: AiUsageSummary;
+}
