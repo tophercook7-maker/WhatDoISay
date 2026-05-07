@@ -67,14 +67,45 @@ Deno.serve(async (req) => {
 });
 
 function buildRescueMessage(params: { mode: string; pastedMessage: string; userInput: string }) {
+  const perspectiveHints = inferPerspectiveHints(params.userInput, params.pastedMessage);
+
   return [
     `Mode: ${params.mode}`,
+    'Perspective task: First identify who is speaking, who is receiving, who owns the issue, and what outcome is wanted. Do not reverse speaker and recipient.',
+    perspectiveHints.length ? `Detected perspective hints:\n${perspectiveHints.map((hint) => `- ${hint}`).join('\n')}` : '',
     params.pastedMessage ? `Message being replied to:\n${params.pastedMessage}` : '',
     params.userInput ? `User notes:\n${params.userInput}` : '',
     'Return JSON with three strategically different replies and a "don\'t say" warning.',
   ]
     .filter(Boolean)
     .join('\n\n');
+}
+
+function inferPerspectiveHints(userInput: string, pastedMessage: string) {
+  const text = `${userInput}\n${pastedMessage}`.toLowerCase();
+  const hints: string[] = [];
+
+  if (/\b(my|mine)\b/.test(text) || /\bi\s+(owe|owed|have|still have|need to|will|am|was)\b/.test(text)) {
+    hints.push('First-person language is present; preserve I/my/me ownership in the reply.');
+  }
+
+  if (/\b(my|#)\s+balance\b/.test(text) || /\bbalance\b/.test(text)) {
+    hints.push('A balance is mentioned; do not say "your balance" unless the recipient clearly owns it.');
+  }
+
+  if (/\b(outstanding|remaining)\s+balance\b/.test(text) || /\bowe(s|d)?\b/.test(text)) {
+    hints.push('Money owed is involved; distinguish an accountable update from a payment demand.');
+  }
+
+  if (/thanks?\s+for\s+(being\s+)?patient/.test(text) || /thank you\s+for\s+(being\s+)?patient/.test(text)) {
+    hints.push('The desired move includes thanking the recipient for patience.');
+  }
+
+  if (/\bby\s+(november|december|january|february|march|april|may|june|july|august|september|october)\b/.test(text)) {
+    hints.push('A target month is present; preserve that timing without inventing a new deadline.');
+  }
+
+  return hints;
 }
 
 function sanitize(value: unknown, maxLength: number) {
